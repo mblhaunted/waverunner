@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.mattsprint.yaml
+.waverunner.yaml
+.claude/
+.coverage
+htmlcov/
+benchmark_results.json

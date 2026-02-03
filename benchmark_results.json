@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-02-02 09:24:12",
+  "implementations": {
+    "Waverunner (rescue)": {
+      "total_files": 60,
+      "total_lines": 9949,
+      "source_lines": 3456,
+      "test_lines": 4718,
+      "doc_lines": 1775,
+      "source_files": 24,
+      "test_files": 20,
+      "doc_files": 15,
+      "config_files": 1,
+      "has_tests": true,
+      "has_docs": true,
+      "has_error_handling": true,
+      "has_validation": true,
+      "has_database": true,
+      "feature_completeness": 1.0,
+      "test_coverage_ratio": 1.365162037037037,
+      "documentation_ratio": 0.25,
+      "implementation_name": "Waverunner (rescue)",
+      "analyzed_at": 1770045852.4269338
+    },
+    "Regular Claude (foo)": {
+      "total_files": 15,
+      "total_lines": 1632,
+      "source_lines": 1332,
+      "test_lines": 0,
+      "doc_lines": 300,
+      "source_files": 10,
+      "test_files": 0,
+      "doc_files": 2,
+      "config_files": 3,
+      "has_tests": false,
+      "has_docs": true,
+      "has_error_handling": false,
+      "has_validation": false,
+      "has_database": false,
+      "feature_completeness": 0.2,
+      "test_coverage_ratio": 0.0,
+      "documentation_ratio": 0.13333333333333333,
+      "implementation_name": "Regular Claude (foo)",
+      "analyzed_at": 1770045852.4276588
+    }
+  },
+  "winner": {
+    "most_code": "Waverunner (rescue)",
+    "most_tests": "Waverunner (rescue)",
+    "most_docs": "Waverunner (rescue)",
+    "best_test_coverage": "Waverunner (rescue)",
+    "best_documentation": "Waverunner (rescue)",
+    "most_features": "Waverunner (rescue)"
+  }
+}
