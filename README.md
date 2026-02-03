@@ -72,7 +72,7 @@ You: "Build a user authentication system with JWT"
 
 > ⚠️ **Alpha Software:** `waverunner` is under active development. Core features work well (we use it daily), but expect some rough edges. Feedback and contributions welcome!
 
-> 📝 **Note:** Commit history has been squashed to clean up for future development. This is a demonstration project showcasing multi-agent orchestration patterns.
+> 📝 **Note:** Commit history has been squashed to clean up for future development. This is a demonstration project showcasing multi-agent orchestration patterns. Full development history available on request for transparency.
 
 ## Why This Exists
 
