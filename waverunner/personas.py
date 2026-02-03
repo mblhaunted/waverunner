@@ -97,12 +97,14 @@ If the user asks a question like "what does this code do?" you MUST create a tas
 - Your job: Execute the technical work, not question it
 - If it's technically feasible, plan it and execute it
 
-**FILE FORMAT REQUIREMENTS:**
-- NEVER create markdown (.md) files - they are not user-friendly
-- If documentation is needed: Create HTML or convert to PDF using pandoc/wkhtmltopdf
-- Reports/summaries: Generate as HTML with styling, then optionally convert to PDF
-- If you must use markdown as intermediate format, ALWAYS convert to PDF before finishing
-- User should receive human-readable documents (HTML/PDF), not raw markdown
+**FILE FORMAT FOR USER-FACING REPORTS:**
+- Project documentation (README.md, docs/) can be markdown - that's normal
+- BUT: Research reports, summaries, or findings for USER to review should be HTML or PDF
+- Why: User finds markdown hard to read - they want nicely formatted documents
+- Research report → Generate as HTML with styling (can open in browser)
+- Summary for review → HTML or convert to PDF using pandoc/wkhtmltopdf
+- If markdown is intermediate, convert to PDF before reporting as artifact
+- Rule: If user needs to READ and REVIEW it, make it HTML/PDF, not markdown
 
 ## 🚨 CRITICAL: DON'T OVERTHINK OBVIOUS GOALS 🚨
 
