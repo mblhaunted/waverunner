@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waverunner - Alien Cosmos</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <!-- Animated grid background (Canvas) -->
+    <canvas id="grid-bg"></canvas>
+
+    <!-- Main content -->
+    <div id="app">
+        <header>
+            <h1>WAVERUNNER</h1>
+            <div id="wave-indicator">
+                <span class="label">Wave</span>
+                <span id="current-wave">0</span>/<span id="total-waves">0</span>
+            </div>
+            <div id="progress-container">
+                <div id="progress-bar"></div>
+                <span id="progress-text">0%</span>
+            </div>
+            <div id="connection-status" class="connected">●</div>
+        </header>
+
+        <!-- Dependency graph (D3.js force-directed) -->
+        <div id="graph-container">
+            <svg id="dependency-graph"></svg>
+        </div>
+
+        <!-- Wave timeline -->
+        <div id="wave-timeline"></div>
+
+        <!-- Live task outputs -->
+        <div id="task-outputs">
+            <h3>ACTIVE TASKS</h3>
+            <div id="task-cards"></div>
+        </div>
+
+        <!-- Metrics sidebar -->
+        <aside id="metrics">
+            <h3>METRICS</h3>
+            <div id="metrics-content">
+                <div class="metric">
+                    <span class="metric-label">Elapsed</span>
+                    <span class="metric-value" id="elapsed">0:00</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Tasks</span>
+                    <span class="metric-value" id="tasks-progress">0/0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Wave</span>
+                    <span class="metric-value" id="wave-progress">0/0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Parallel</span>
+                    <span class="metric-value" id="parallel-count">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">⚰ Reaper</span>
+                    <span class="metric-value" id="reaper-kills">0</span>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="waves.js"></script>
+    <script src="dashboard.js"></script>
+</body>
+</html>
