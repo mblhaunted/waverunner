@@ -37,7 +37,7 @@ class DashboardServer:
         self.http_server = None
         self.loop = None
 
-    async def websocket_handler(self, websocket, path):
+    async def websocket_handler(self, websocket):
         """
         Handle WebSocket connection.
 
