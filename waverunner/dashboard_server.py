@@ -91,15 +91,12 @@ class DashboardServer:
         # Enable event emitter with this loop
         DashboardEventEmitter.enable(self.loop)
 
-        # Start WebSocket server
-        start_server = websockets.serve(
-            self.websocket_handler,
-            "localhost",
-            self.ws_port
-        )
+        # Start WebSocket server inside async context
+        async def start_ws():
+            async with websockets.serve(self.websocket_handler, "localhost", self.ws_port):
+                await asyncio.Future()  # Run forever
 
-        self.loop.run_until_complete(start_server)
-        self.loop.run_forever()
+        self.loop.run_until_complete(start_ws())
 
     def stop(self):
         """Stop both servers."""
