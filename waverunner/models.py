@@ -354,6 +354,12 @@ class Board:
     # Whether to use complexity-based default timeouts (default: False = no timeouts)
     use_default_timeouts: bool = False
 
+    # Cost tracking
+    cost_data: dict = field(default_factory=dict)  # Stores CostTracker.to_dict() output
+
+    # Git integration
+    git_auto_commit: bool = False  # Auto-commit after each wave if True
+
     @property
     def status(self) -> str:
         if not self.tasks:
@@ -518,6 +524,8 @@ class Board:
             "mcps": self.mcps,
             "task_timeout": self.task_timeout,
             "use_default_timeouts": self.use_default_timeouts,
+            "cost_data": self.cost_data,
+            "git_auto_commit": self.git_auto_commit,
             "tasks": [t.to_dict() for t in self.tasks],
         }
 
@@ -552,6 +560,8 @@ class Board:
             k: PersonaAccountability.from_dict(v)
             for k, v in data.get("persona_accountability", {}).items()
         }
+        board.cost_data = data.get("cost_data", {})
+        board.git_auto_commit = data.get("git_auto_commit", False)
         return board
 
     def to_yaml(self) -> str:
