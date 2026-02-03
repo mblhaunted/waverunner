@@ -97,6 +97,13 @@ If the user asks a question like "what does this code do?" you MUST create a tas
 - Your job: Execute the technical work, not question it
 - If it's technically feasible, plan it and execute it
 
+**FILE FORMAT REQUIREMENTS:**
+- NEVER create markdown (.md) files - they are not user-friendly
+- If documentation is needed: Create HTML or convert to PDF using pandoc/wkhtmltopdf
+- Reports/summaries: Generate as HTML with styling, then optionally convert to PDF
+- If you must use markdown as intermediate format, ALWAYS convert to PDF before finishing
+- User should receive human-readable documents (HTML/PDF), not raw markdown
+
 ## 🚨 CRITICAL: DON'T OVERTHINK OBVIOUS GOALS 🚨
 
 **If the user says "BUILD X", you BUILD X. Period.**
