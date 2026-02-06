@@ -10,3 +10,10 @@ build/
 .coverage
 htmlcov/
 benchmark_results.json
+
+# Never commit API keys or credentials
+.env
+.env.local
+*.key
+*_key.txt
+credentials.json

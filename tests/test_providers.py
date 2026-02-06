@@ -1,6 +1,8 @@
 """Tests for LLM provider abstraction."""
 
 import pytest
+import os
+from unittest.mock import patch
 from waverunner.providers import LLMProvider, MockLLMProvider, get_provider, ClaudeCodeProvider
 
 
@@ -71,12 +73,21 @@ def test_get_provider_invalid():
 
 def test_provider_interface():
     """All providers should implement LLMProvider interface."""
-    providers = [
-        MockLLMProvider(),
-        ClaudeCodeProvider(),
-    ]
+    # Mock anthropic for testing
+    with patch("anthropic.Anthropic"):
+        os.environ["ANTHROPIC_API_KEY"] = "sk-test-key"
+        try:
+            from waverunner.providers import AnthropicAPIProvider
+            providers = [
+                MockLLMProvider(),
+                ClaudeCodeProvider(),
+                AnthropicAPIProvider(),
+            ]
 
-    for provider in providers:
-        assert isinstance(provider, LLMProvider)
-        assert hasattr(provider, "run")
-        assert callable(provider.run)
+            for provider in providers:
+                assert isinstance(provider, LLMProvider)
+                assert hasattr(provider, "run")
+                assert callable(provider.run)
+        finally:
+            if "ANTHROPIC_API_KEY" in os.environ:
+                del os.environ["ANTHROPIC_API_KEY"]

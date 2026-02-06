@@ -289,6 +289,104 @@ class ClaudeCodeProvider(LLMProvider):
             sys.exit(1)
 
 
+class AnthropicAPIProvider(LLMProvider):
+    """Provider for Anthropic API (direct SDK usage with prompt caching)."""
+
+    def __init__(self):
+        """Initialize Anthropic API client."""
+        import anthropic
+        import os
+
+        # Check for API key
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY environment variable not set. "
+                "Set it in your ~/.bashrc or shell config:\n"
+                "  export ANTHROPIC_API_KEY='your-api-key-here'"
+            )
+
+        self.client = anthropic.Anthropic(api_key=api_key)
+
+    def run(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        timeout: Optional[int] = None,
+        mcps: Optional[list[str]] = None,
+        show_spinner: bool = True,
+        verbose: bool = False,
+        task=None,
+        persona=None,
+        progress_callback=None,
+    ) -> str:
+        """
+        Run Anthropic API with structured messages and prompt caching.
+
+        Uses message arrays instead of flat strings, enabling prompt caching
+        for system prompts and repeated context.
+        """
+        # Build structured messages
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
+
+        # Build system message with caching
+        system_messages = None
+        if system_prompt:
+            system_messages = [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"}  # Cache system prompt
+                }
+            ]
+
+        # Build API call kwargs
+        api_kwargs = {
+            "model": "claude-sonnet-4-5-20250929",
+            "max_tokens": 8192,
+            "messages": messages,
+        }
+
+        if system_messages:
+            api_kwargs["system"] = system_messages
+
+        if timeout:
+            api_kwargs["timeout"] = timeout
+
+        # Note: MCP support via API would require implementing the MCP protocol
+        # For now, if MCPs are requested, log a warning
+        if mcps and verbose:
+            print("[Warning: MCP configs not yet supported in Anthropic API provider]")
+
+        try:
+            # Show spinner if requested
+            if show_spinner and not verbose:
+                print("⏳ Calling Anthropic API...", end="", flush=True)
+
+            # Make API call
+            response = self.client.messages.create(**api_kwargs)
+
+            # Clear spinner
+            if show_spinner and not verbose:
+                print("\r\033[K", end="")  # Clear line
+
+            # Extract text from response
+            if response.content and len(response.content) > 0:
+                return response.content[0].text
+            else:
+                return ""
+
+        except Exception as e:
+            # Clear spinner on error
+            if show_spinner and not verbose:
+                print("\r\033[K", end="")
+
+            # Re-raise with context
+            raise Exception(f"Anthropic API error: {e}") from e
+
+
 class MockLLMProvider(LLMProvider):
     """Mock provider for testing. Returns predefined responses."""
 
@@ -346,13 +444,15 @@ def get_provider(provider_name: str = "claude-code") -> LLMProvider:
     Get an LLM provider by name.
 
     Args:
-        provider_name: Name of the provider (claude-code, mock)
+        provider_name: Name of the provider (claude-code, anthropic-api, mock)
 
     Returns:
         LLMProvider instance
     """
     if provider_name == "claude-code":
         return ClaudeCodeProvider()
+    elif provider_name == "anthropic-api":
+        return AnthropicAPIProvider()
     elif provider_name == "mock":
         return MockLLMProvider()
     else:
