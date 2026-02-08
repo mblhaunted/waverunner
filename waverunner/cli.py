@@ -141,7 +141,7 @@ def go(
     mode: str = typer.Option("sprint", "--mode", "-m", help="sprint or kanban"),
     context: str = typer.Option("", "--context", "-c", help="Additional context"),
     confirm: bool = typer.Option(False, "--confirm", help="Ask for confirmation before executing"),
-    force: bool = typer.Option(False, "--force", help="Force overwrite existing board without warning"),
+    force: bool = typer.Option(False, "--force", help="Skip existing board checks (use for manual recovery)"),
     max_iter: Optional[int] = typer.Option(None, "--max-iter", "-i", help="Max iterations (default: infinite, retries until success)"),
     max_parallel: int = typer.Option(8, "--max-parallel", "-p", help="Max tasks to run in parallel (default: 8)"),
     mcp: Optional[list[str]] = typer.Option(None, "--mcp", help="MCP config (JSON string or path). Can repeat."),
@@ -156,20 +156,42 @@ def go(
 
     Automatically parallelizes tasks based on the dependency graph.
 
+    If a board already exists:
+    - Completed sprints: Automatically starts new iteration with new goal
+    - In-progress sprints: Warns but allows you to pivot to new goal
+    - Use --force only for manual recovery (rarely needed)
+
     Examples:
         waverunner go "Add user authentication"
         waverunner go "Fix bugs" --mode kanban
         waverunner go "Build API" --dashboard
+        waverunner go "New goal" # Works even if board exists
     """
     # Set verbose mode
     set_verbose(verbose)
 
-    # Check for existing board (unless --force specified)
-    try:
-        require_no_existing_board(force=force)
-    except BoardExistsError as e:
-        ui.console.print(f"[{ui.ERROR}]{e}[/]")
-        raise typer.Exit(1)
+    # Check for existing board
+    existing_board_file = check_existing_board()
+    if existing_board_file and not force:
+        # Load existing board to check status
+        try:
+            existing = Board.load(str(existing_board_file))
+            completed = sum(1 for t in existing.tasks if t.status == TaskStatus.COMPLETED)
+            total = len(existing.tasks)
+
+            # If board is complete, allow seamless continuation
+            if completed == total and total > 0:
+                ui.console.print(f"[{ui.DIM}]Previous sprint complete ({completed}/{total} tasks). Starting new iteration...[/]")
+            # If board has work in progress, warn but allow
+            elif completed > 0:
+                ui.console.print(f"[{ui.WARN}]Existing board has work in progress ({completed}/{total} tasks completed).[/]")
+                ui.console.print(f"[{ui.DIM}]Starting new iteration with goal: {goal}[/]")
+            # Empty board - just continue
+            else:
+                ui.console.print(f"[{ui.DIM}]Updating existing board with new goal...[/]")
+        except Exception:
+            # Board file corrupted - warn and continue
+            ui.console.print(f"[{ui.WARN}]Existing board file corrupted. Creating new board...[/]")
 
     # Start dashboard if requested
     if dashboard:
