@@ -643,7 +643,8 @@ def extract_yaml_from_response(response: str) -> dict:
     if "tasks" in result:
         valid_task_fields = {
             "id", "title", "description", "complexity", "priority",
-            "dependencies", "assigned_to", "acceptance_criteria"
+            "dependencies", "assigned_to", "acceptance_criteria", "task_type",
+            "status", "artifacts", "notes", "blocked_reason"  # Allow all Task model fields
         }
         for i, task in enumerate(result.get("tasks", [])):
             if isinstance(task, dict):
