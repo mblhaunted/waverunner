@@ -9,7 +9,8 @@ from rich.markdown import Markdown
 
 from .models import Board, Task, Mode, TaskStatus, Complexity, Priority
 from .prompts import get_retro_prompt
-from .agent import generate_plan, execute_task, run_sprint, run_sprint_loop, set_verbose, calculate_waves
+from .agent import generate_plan, execute_task, run_sprint, run_sprint_loop, set_verbose, calculate_waves, set_provider as set_llm_provider
+from .providers import get_provider
 from . import ui
 
 
@@ -150,6 +151,7 @@ def go(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed agent output"),
     planning_mode: str = typer.Option("collaborative", "--planning-mode", help="Planning model: collaborative (default) or independent"),
     dashboard: bool = typer.Option(False, "--dashboard", help="Launch real-time web dashboard"),
+    provider: str = typer.Option("claude-code", "--provider", help="LLM provider: claude-code (default) or anthropic-api"),
 ):
     """
     Plan and execute a sprint. This is the main command.
@@ -166,9 +168,21 @@ def go(
         waverunner go "Fix bugs" --mode kanban
         waverunner go "Build API" --dashboard
         waverunner go "New goal" # Works even if board exists
+        waverunner go "Goal" --provider anthropic-api # Use Anthropic API (60-70% token savings)
     """
     # Set verbose mode
     set_verbose(verbose)
+
+    # Set LLM provider
+    try:
+        llm_provider = get_provider(provider)
+        set_llm_provider(llm_provider)
+        if provider != "claude-code":
+            ui.console.print(f"[{ui.CYAN}]Using provider:[/] [{ui.DIM}]{provider}[/]")
+    except ValueError as e:
+        ui.console.print(f"[{ui.ERROR}]Invalid provider: {provider}[/]")
+        ui.console.print(f"[{ui.DIM}]Available: claude-code, anthropic-api[/]")
+        raise typer.Exit(1)
 
     # Check for existing board
     existing_board_file = check_existing_board()
