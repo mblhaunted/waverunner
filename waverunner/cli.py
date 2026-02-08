@@ -50,6 +50,87 @@ def save_board(board: Board):
     board.save(str(board_file))
 
 
+class BoardExistsError(Exception):
+    """Raised when attempting to overwrite existing board without confirmation."""
+    pass
+
+
+def check_existing_board(directory: str = None) -> Optional[Path]:
+    """
+    Check if board file exists in directory.
+
+    Returns:
+        Path to board file if exists, None otherwise
+    """
+    if directory is None:
+        directory = Path.cwd()
+    else:
+        directory = Path(directory)
+
+    board_file = directory / DEFAULT_BOARD_FILE
+    if board_file.exists():
+        return board_file
+    return None
+
+
+def require_no_existing_board(directory: str = None, force: bool = False):
+    """
+    Ensure no board exists, or raise BoardExistsError.
+
+    Args:
+        directory: Directory to check (default: current)
+        force: If True, skip check (allow overwrite)
+
+    Raises:
+        BoardExistsError if board exists and force=False
+    """
+    if force:
+        return  # Allow overwrite
+
+    existing_board = check_existing_board(directory)
+    if existing_board:
+        try:
+            board = Board.load(str(existing_board))
+            raise BoardExistsError(
+                f"Board already exists: {existing_board}\n"
+                f"Goal: {board.goal}\n"
+                f"Tasks: {len(board.tasks)} ({sum(1 for t in board.tasks if t.status == TaskStatus.COMPLETED)} completed)\n"
+                f"\n"
+                f"Options:\n"
+                f"  - Use 'waverunner run' to continue existing work\n"
+                f"  - Use 'waverunner reset' to delete and start fresh\n"
+                f"  - Use --force flag to overwrite (destroys existing work)"
+            )
+        except Exception as e:
+            # Board file exists but can't be loaded
+            raise BoardExistsError(
+                f"Board file exists but is corrupted: {existing_board}\n"
+                f"Error: {e}\n"
+                f"Use 'waverunner reset' or --force flag to overwrite"
+            )
+
+
+def load_or_create_board(directory: str = None, continue_existing: bool = False) -> Optional[Board]:
+    """
+    Load existing board if continue_existing=True, otherwise return None.
+
+    Args:
+        directory: Directory to check (default: current)
+        continue_existing: If True, load and return existing board
+
+    Returns:
+        Board if exists and continue_existing=True, None otherwise
+    """
+    if not continue_existing:
+        return None
+
+    existing_board = check_existing_board(directory)
+    if existing_board:
+        return Board.load(str(existing_board))
+
+    return None
+
+
 # ============================================================================
 # MAIN COMMANDS
 # ============================================================================
@@ -60,7 +141,7 @@ def go(
     mode: str = typer.Option("sprint", "--mode", "-m", help="sprint or kanban"),
     context: str = typer.Option("", "--context", "-c", help="Additional context"),
     confirm: bool = typer.Option(False, "--confirm", help="Ask for confirmation before executing"),
-    keep_board: bool = typer.Option(False, "--keep-board", help="Don't overwrite existing board (ask first)"),
+    force: bool = typer.Option(False, "--force", help="Force overwrite existing board without warning"),
     max_iter: Optional[int] = typer.Option(None, "--max-iter", "-i", help="Max iterations (default: infinite, retries until success)"),
     max_parallel: int = typer.Option(8, "--max-parallel", "-p", help="Max tasks to run in parallel (default: 8)"),
     mcp: Optional[list[str]] = typer.Option(None, "--mcp", help="MCP config (JSON string or path). Can repeat."),
@@ -82,6 +163,13 @@ def go(
     """
     # Set verbose mode
     set_verbose(verbose)
+
+    # Check for existing board (unless --force specified)
+    try:
+        require_no_existing_board(force=force)
+    except BoardExistsError as e:
+        ui.console.print(f"[{ui.ERROR}]{e}[/]")
+        raise typer.Exit(1)
 
     # Start dashboard if requested
     if dashboard:
@@ -105,12 +193,18 @@ def go(
             ui.console.print("[dim]Continuing without dashboard...[/]")
 
     board_file = Path.cwd() / DEFAULT_BOARD_FILE
-    if board_file.exists() and keep_board:
-        if not typer.confirm("Board already exists. Overwrite?"):
-            raise typer.Exit(0)
 
     # Show logo
     ui.print_logo()
+
+    # Detect existing work and append to context
+    from .agent import generate_existing_work_context
+    existing_work_context = generate_existing_work_context(str(Path.cwd()))
+    if existing_work_context:
+        # Prepend existing work context to user context
+        full_context = f"{existing_work_context}\n\n{context}" if context else existing_work_context
+    else:
+        full_context = context
 
     # Init
     board_mode = Mode.KANBAN if mode.lower() == "kanban" else Mode.SPRINT
@@ -119,7 +213,7 @@ def go(
     board = Board(
         id=board_id,
         goal=goal,
-        context=context,
+        context=full_context,
         mode=board_mode,
         planning_mode=planning_mode,
         mcps=mcp or [],

@@ -41,6 +41,13 @@ def get_current_provider() -> LLMProvider:
         _PROVIDER = get_provider("claude-code")
     return _PROVIDER
 
+# Directories and files to ignore when checking for existing work
+IGNORED_PATHS = {
+    '__pycache__', '.git', '.svn', '.hg', 'node_modules', '.venv', 'venv',
+    '.idea', '.vscode', 'dist', 'build', '*.egg-info', '.pytest_cache',
+    '.mypy_cache', '.tox', 'htmlcov', '.coverage', '.DS_Store'
+}
+
 # Complexity-based timeouts (seconds) - DOUBLED from original estimates
 COMPLEXITY_TIMEOUTS = {
     Complexity.TRIVIAL: {"warn": 480, "kill": 1200},      # 8 min / 20 min
@@ -436,6 +443,137 @@ def get_input_with_timeout(prompt: str, timeout: int) -> str | None:
     return result[0]
 
 
+def detect_existing_work(directory: str) -> Optional[dict]:
+    """
+    Detect existing code/project in directory.
+
+    Returns dict with:
+        - file_count: Number of non-ignored files
+        - has_code: Whether code files exist
+        - has_tests: Whether test files exist
+        - has_documentation: Whether docs exist
+        - project_type: python|javascript|rust|go|unknown
+        - significant_files: List of important file names
+
+    Returns None if directory is empty or only has ignored files.
+    """
+    dir_path = Path(directory)
+    if not dir_path.exists():
+        return None
+
+    files = []
+    significant_files = []
+
+    # Walk directory and collect non-ignored files
+    for root, dirs, filenames in os.walk(directory):
+        # Filter out ignored directories
+        dirs[:] = [d for d in dirs if d not in IGNORED_PATHS]
+
+        for filename in filenames:
+            # Skip ignored files
+            if any(ig in filename for ig in ['.pyc', '.pyo', '.so', '.dylib']):
+                continue
+
+            rel_path = os.path.relpath(os.path.join(root, filename), directory)
+            files.append(rel_path)
+
+            # Track significant files
+            if filename in ['README.md', 'ARCHITECTURE.md', 'API.md', 'DEPLOYMENT.md',
+                           'setup.py', 'pyproject.toml', 'package.json', 'Cargo.toml',
+                           'go.mod', 'Dockerfile', 'docker-compose.yml']:
+                significant_files.append(rel_path)
+
+    if not files:
+        return None
+
+    # Detect project characteristics
+    file_extensions = {Path(f).suffix for f in files}
+    has_code = any(ext in file_extensions for ext in ['.py', '.js', '.ts', '.rs', '.go', '.java', '.cpp', '.c'])
+    has_tests = any('test' in f.lower() for f in files)
+    has_documentation = any(f.endswith('.md') for f in significant_files)
+
+    # Detect project type
+    project_type = "unknown"
+    if any('setup.py' in f or 'pyproject.toml' in f for f in significant_files):
+        project_type = "python"
+    elif any('package.json' in f for f in significant_files):
+        project_type = "javascript"
+    elif any('Cargo.toml' in f for f in significant_files):
+        project_type = "rust"
+    elif any('go.mod' in f for f in significant_files):
+        project_type = "go"
+
+    return {
+        "file_count": len(files),
+        "has_code": has_code,
+        "has_tests": has_tests,
+        "has_documentation": has_documentation,
+        "project_type": project_type,
+        "significant_files": significant_files,
+    }
+
+
+def should_warn_greenfield(directory: str) -> bool:
+    """
+    Check if directory should trigger greenfield warning.
+
+    Returns True if directory has significant existing work
+    that the team should be aware of.
+    """
+    existing_work = detect_existing_work(directory)
+    if existing_work is None:
+        return False
+
+    # Warn if there are many files or significant indicators
+    return (
+        existing_work["file_count"] > 10 or
+        existing_work["has_documentation"] or
+        (existing_work["has_code"] and existing_work["has_tests"])
+    )
+
+
+def generate_existing_work_context(directory: str) -> str:
+    """
+    Generate context string about existing work in directory.
+
+    This context should be prepended to planning to prevent
+    agents from treating non-empty directories as greenfield.
+    """
+    existing_work = detect_existing_work(directory)
+    if existing_work is None:
+        return ""
+
+    context_parts = [
+        "⚠️ CRITICAL: This is NOT a greenfield project. Existing work detected:",
+        f"\n- {existing_work['file_count']} files in directory",
+    ]
+
+    if existing_work["project_type"] != "unknown":
+        context_parts.append(f"- Project type: {existing_work['project_type']}")
+
+    if existing_work["significant_files"]:
+        context_parts.append("\n- Significant files found:")
+        for f in existing_work["significant_files"][:10]:  # Show first 10
+            context_parts.append(f"  • {f}")
+
+    if existing_work["has_code"]:
+        context_parts.append("- Source code exists")
+
+    if existing_work["has_tests"]:
+        context_parts.append("- Test suite exists")
+
+    if existing_work["has_documentation"]:
+        context_parts.append("- Documentation exists")
+
+    context_parts.append("\nBEFORE PLANNING:")
+    context_parts.append("1. Check what files exist (use ls, find)")
+    context_parts.append("2. Read key files (README.md, ARCHITECTURE.md if present)")
+    context_parts.append("3. EXTEND existing work - do NOT create parallel implementations")
+    context_parts.append("4. If previous iterations completed work, BUILD ON IT\n")
+
+    return "\n".join(context_parts)
+
+
 def run_claude(prompt: str, system_prompt: str = None, timeout: int = None, mcps: list[str] = None, show_spinner: bool = True, provider: LLMProvider = None, task=None, persona=None, progress_callback=None) -> str:
     """
     Run LLM with a prompt and return the response.
@@ -488,11 +626,33 @@ def extract_yaml_from_response(response: str) -> dict:
         # Try to parse the whole thing
         yaml_content = response.strip()
 
-    result = yaml.safe_load(yaml_content)
+    # Check if we actually have YAML content
+    if not yaml_content or len(yaml_content) < 5:
+        raise ValueError(f"No YAML content found in response. Response: {response[:200]}")
+
+    try:
+        result = yaml.safe_load(yaml_content)
+    except yaml.YAMLError as e:
+        raise ValueError(f"YAML parse error: {str(e)}\n\nYAML content:\n{yaml_content[:500]}")
 
     # Validate that we got a dict, not a string or other type
     if not isinstance(result, dict):
-        raise ValueError(f"Expected YAML dict but got {type(result).__name__}: {result}")
+        raise ValueError(f"No YAML dict found in response. Expected YAML dict but got {type(result).__name__}: {result}")
+
+    # Validate task structure - check for invalid fields
+    if "tasks" in result:
+        valid_task_fields = {
+            "id", "title", "description", "complexity", "priority",
+            "dependencies", "assigned_to", "acceptance_criteria"
+        }
+        for i, task in enumerate(result.get("tasks", [])):
+            if isinstance(task, dict):
+                invalid_fields = set(task.keys()) - valid_task_fields
+                if invalid_fields:
+                    raise ValueError(
+                        f"YAML validation error: Task {i} has invalid fields: {invalid_fields}. "
+                        f"Valid fields are: {valid_task_fields}"
+                    )
 
     return result
 
