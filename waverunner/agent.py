@@ -1458,6 +1458,100 @@ def generate_plan(board: Board, iteration: int = 1, max_iterations: int = 1, aut
         return generate_plan_collaborative(board, iteration, max_iterations, auto)
 
 
+def negotiate_resurrection(board: Board, task: Task, kill_reason: str, max_rounds: int = 3) -> str:
+    """
+    Reaper and Agent negotiate an adjustment before retrying a killed task.
+
+    Args:
+        board: Current board
+        task: Task that was killed
+        kill_reason: Why the Reaper killed it
+        max_rounds: Maximum negotiation rounds before giving up
+
+    Returns:
+        Agreed adjustment strategy as a string
+
+    Raises:
+        Exception if they can't reach agreement within max_rounds
+    """
+    from .personas import get_personas
+
+    # Get assigned persona and Reaper
+    personas = get_personas(board.mode, goal=board.goal, context=board.context)
+    assigned_persona = next((p for p in personas if p.name == task.assigned_to), personas[0])
+    reaper = next(p for p in personas if p.role == "guardian")
+
+    # Build context about previous failures
+    history_context = ""
+    if task.resurrection_history:
+        history_context = "\n**Previous failed attempts:**\n"
+        for i, corpse in enumerate(task.resurrection_history[-3:], 1):
+            history_context += f"{i}. Killed after {corpse.elapsed_seconds}s: {corpse.kill_reason}\n"
+            if corpse.partial_notes:
+                history_context += f"   Notes: {corpse.partial_notes[:100]}\n"
+
+    # Negotiation loop
+    for round_num in range(1, max_rounds + 1):
+        # Agent proposes adjustment
+        agent_prompt = f"""Task '{task.title}' was killed by Reaper.
+
+**Why it failed:** {kill_reason}
+{history_context}
+
+**Your task:** Propose a SPECIFIC adjustment to the approach that addresses why it failed.
+- Don't repeat previous approaches
+- Be concrete about what will change
+- Keep it brief (1-2 sentences)
+
+What adjustment do you propose?"""
+
+        agent_response = run_claude(
+            prompt=agent_prompt,
+            system_prompt=assigned_persona.system_prompt,
+            show_spinner=False
+        )
+
+        # Reaper evaluates proposal
+        reaper_prompt = f"""Task '{task.title}' failed: {kill_reason}
+
+**Agent ({assigned_persona.name}) proposes:**
+{agent_response}
+
+{history_context}
+
+**Your judgment:** Is this adjustment acceptable, or should they try something different?
+
+Respond with EXACTLY one of:
+- "APPROVED: [reason]" - if the adjustment addresses the failure
+- "REJECTED: [reason]" - if it's inadequate or repeats previous mistakes
+
+Be brief and direct."""
+
+        reaper_response = run_claude(
+            prompt=reaper_prompt,
+            system_prompt=reaper.system_prompt,
+            show_spinner=False
+        )
+
+        # Check if approved
+        if "APPROVED" in reaper_response.upper():
+            # Extract and return the adjustment
+            adjustment = agent_response.strip()
+            ui.console.print(f"[{ui.SUCCESS}]✓ Reaper approved adjustment:[/] [{ui.DIM}]{adjustment[:100]}...[/]")
+            return adjustment
+        elif "REJECTED" in reaper_response.upper():
+            # Continue negotiating
+            ui.console.print(f"[{ui.WARN}]✗ Reaper rejected (round {round_num}/{max_rounds})[/]")
+            # Add rejection to history for next round
+            history_context += f"\nRound {round_num} rejected: {reaper_response}\n"
+        else:
+            # Unclear response - treat as rejection
+            ui.console.print(f"[{ui.WARN}]? Unclear Reaper response (round {round_num}/{max_rounds})[/]")
+
+    # Failed to reach agreement
+    raise Exception(f"Could not reach agreement after {max_rounds} negotiation rounds")
+
+
 def execute_task(board: Board, task: Task, progress_callback=None) -> tuple[list[str], Complexity, str]:
     """
     Have the assigned persona execute a task with full planning context.
@@ -1906,10 +2000,18 @@ def run_sprint(board: Board, max_parallel: int = 8, use_live_dashboard: bool = T
                         task.status = TaskStatus.BLOCKED
                         task.blocked_reason = f"Reaper killed {kill_count}x - needs replan"
                     else:
+                        # Negotiate adjustment with Reaper before retry
+                        try:
+                            adjustment = negotiate_resurrection(board, task, str(e))
+                            # Add adjustment to task notes for next attempt
+                            task.notes = f"⚰ RESURRECTION ADJUSTMENT:\n{adjustment}\n\n"
+                        except Exception as neg_error:
+                            # Negotiation failed - use default message
+                            task.notes = f"⚰ RESURRECTION: Could not agree on adjustment ({neg_error}). Try different approach.\n\n"
+
                         # Reset task to retry (but keep resurrection history)
                         task.status = TaskStatus.BACKLOG
                         task.started_at = None
-                        task.notes = ""  # Clear notes for fresh attempt
 
                     # Save ONCE at end of lock, not twice
                     board.save(find_board_file())
