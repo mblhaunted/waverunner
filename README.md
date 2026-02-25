@@ -136,4 +136,4 @@ Key files:
 
 ## License
 
-MIT
+Apache 2.0
