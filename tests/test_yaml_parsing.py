@@ -88,6 +88,58 @@ clarifications_needed:
     assert len(result["clarifications_needed"]) == 2
 
 
+def test_asterisk_alias_in_unquoted_value():
+    """Should handle *word at start of unquoted value (YAML alias error)."""
+    response = """```yaml
+tasks:
+  - id: "impl-1"
+    title: Core engine
+    description: *numpy based waveform generator
+    complexity: large
+    acceptance_criteria:
+      - Works
+    dependencies: []
+```"""
+
+    result = extract_yaml_from_response(response)
+    assert "tasks" in result
+    assert result["tasks"][0]["id"] == "impl-1"
+    assert "numpy" in result["tasks"][0]["description"]
+
+
+def test_asterisk_alias_in_list_item():
+    """Should handle *word at start of an unquoted list item."""
+    response = """```yaml
+risks:
+  - *critical risk: latency on low-end hardware
+assumptions:
+  - Python 3.10+
+tasks: []
+```"""
+
+    result = extract_yaml_from_response(response)
+    assert "risks" in result
+    assert "assumptions" in result
+
+
+def test_markdown_bold_in_unquoted_description():
+    """Should handle **bold** markdown in unquoted YAML values without crashing."""
+    response = """```yaml
+tasks:
+  - id: "impl-1"
+    title: Build the synthesizer
+    description: Use **numpy** arrays and **sounddevice** for real audio output
+    complexity: medium
+    acceptance_criteria:
+      - Produces audio
+    dependencies: []
+```"""
+
+    result = extract_yaml_from_response(response)
+    assert "tasks" in result
+    assert "numpy" in result["tasks"][0]["description"]
+
+
 def test_complete_plan_yaml():
     """Should parse a complete planning response."""
     response = """```yaml

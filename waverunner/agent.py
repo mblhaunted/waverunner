@@ -632,8 +632,15 @@ def extract_yaml_from_response(response: str) -> dict:
 
     try:
         result = yaml.safe_load(yaml_content)
-    except yaml.YAMLError as e:
-        raise ValueError(f"YAML parse error: {str(e)}\n\nYAML content:\n{yaml_content[:500]}")
+    except yaml.YAMLError:
+        # LLMs often include markdown asterisks (*word, **bold**) in unquoted values.
+        # YAML treats *word as an alias reference, which fails. Strip asterisks and retry.
+        import re
+        cleaned = re.sub(r'\*+', '', yaml_content)
+        try:
+            result = yaml.safe_load(cleaned)
+        except yaml.YAMLError as e:
+            raise ValueError(f"YAML parse error: {str(e)}\n\nYAML content:\n{yaml_content[:500]}")
 
     # Validate that we got a dict, not a string or other type
     if not isinstance(result, dict):
@@ -1119,7 +1126,8 @@ Output ONLY the markdown document, no YAML, no preamble."""
 
     response = run_claude(
         prompt=prompt,
-        system_prompt=facilitator.system_prompt + "\n\nYou are generating a binding technical contract for parallel agents. Be precise and specific.",
+        system_prompt=facilitator.system_prompt + "\n\nYou are generating a binding technical contract for parallel agents. Be precise and specific. Output ONLY markdown — do NOT use any tools, do NOT browse the web, do NOT read files. This is a pure reasoning task.",
+        timeout=180,
         show_spinner=True
     )
 
