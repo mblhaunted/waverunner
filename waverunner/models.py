@@ -333,6 +333,8 @@ class Board:
     out_of_scope: list[str] = field(default_factory=list)
     definition_of_done: list[str] = field(default_factory=list)
     planning_discussion: str = ""  # Full transcript of multi-agent planning discussion
+    architecture_spec: str = ""   # Binding technical contract generated after planning
+    integration_notes: str = ""   # Issues appended by wave integration guard
     decisions: list[Decision] = field(default_factory=list)  # Track consensus vs leader decisions
     planning_mode: str = "collaborative"  # "collaborative" or "independent"
 
@@ -515,6 +517,8 @@ class Board:
             "out_of_scope": self.out_of_scope,
             "definition_of_done": self.definition_of_done,
             "planning_discussion": self.planning_discussion,
+            "architecture_spec": self.architecture_spec,
+            "integration_notes": self.integration_notes,
             "decisions": [d.to_dict() for d in self.decisions],
             "planning_mode": self.planning_mode,
             "sprint_config": self.sprint_config.to_dict(),
@@ -544,6 +548,8 @@ class Board:
             out_of_scope=data.get("out_of_scope", []),
             definition_of_done=data.get("definition_of_done", []),
             planning_discussion=data.get("planning_discussion", ""),
+            architecture_spec=data.get("architecture_spec", ""),
+            integration_notes=data.get("integration_notes", ""),
             planning_mode=data.get("planning_mode", "collaborative"),
             retro_notes=data.get("retro_notes", ""),
             mcps=data.get("mcps", []),

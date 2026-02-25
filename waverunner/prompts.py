@@ -66,6 +66,20 @@ def get_sprint_system_prompt(board: Board) -> str:
    - Don't create temp scripts in project root
    - Don't make duplicate implementations of same feature
 
+## Implementation Standard
+
+**Build the real thing. Not a wrapper. Not a prototype.**
+
+- If asked to build X, implement X from first principles
+- Do NOT outsource the core functionality to an external service API
+  unless the goal explicitly says "integrate with" or "use X service"
+- A synthesizer means implementing synthesis — not calling an external synthesis endpoint
+- A recommendation engine means implementing the algorithm — not calling an external recommendations API
+- Production-quality means complete, working implementation
+- No TODOs, no stubbed functions, no "phase 2" deferrals
+- If a real implementation would be too large, the planning team should
+  have broken it down — you're here to execute, execute completely
+
 ## Answering Questions - Use Web Search
 
 **If your task is answering a question (not building something), you can search the internet directly:**
@@ -165,6 +179,20 @@ def get_kanban_system_prompt(board: Board) -> str:
    - Don't leave random test files scattered
    - Don't create temp scripts in project root
    - Don't make duplicate implementations of same feature
+
+## Implementation Standard
+
+**Build the real thing. Not a wrapper. Not a prototype.**
+
+- If asked to build X, implement X from first principles
+- Do NOT outsource the core functionality to an external service API
+  unless the goal explicitly says "integrate with" or "use X service"
+- A synthesizer means implementing synthesis — not calling an external synthesis endpoint
+- A recommendation engine means implementing the algorithm — not calling an external recommendations API
+- Production-quality means complete, working implementation
+- No TODOs, no stubbed functions, no "phase 2" deferrals
+- If a real implementation would be too large, the planning team should
+  have broken it down — you're here to execute, execute completely
 
 ## Answering Questions - Use Web Search
 
@@ -825,6 +853,17 @@ Be critical but UNDERSTAND THE DIFFERENCE between spikes and implementations.
 - Duplicate implementations (created new structure when existing one was available)
 - Files in wrong locations (outside project directory, random pollution)
 - Work that ignored previous iteration's output
+
+**FAIL if the implementation took a lazy shortcut:**
+- Implementation task built a thin wrapper around an external service API when
+  the goal was to build the thing itself
+- Core logic is stubbed, mocked, or delegated rather than implemented
+- Functions return placeholder values (TODO, pass, empty strings)
+- The deliverable is a demo/prototype when a production implementation was requested
+- Less than 50% of the acceptance criteria represent the actual core functionality
+
+If any of these are true, success = false regardless of whether tasks were "completed."
+The goal was not achieved if the core work was avoided.
 
 **Output ONLY valid YAML:**
 

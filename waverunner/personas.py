@@ -918,10 +918,12 @@ Based on the team discussion, create the sprint plan with:
 6. What's explicitly out of scope
 
 **Critical:**
-- Keep tasks SMALL (Senior Dev pushed back for a reason)
+- **Task sizing:** Size tasks to fit the real work — don't artificially shrink them
+- A task to implement core algorithm logic belongs at MEDIUM or LARGE if that's the reality
+- Don't split tasks in a way that allows each piece to be a stub
 - Maximize parallelism (minimize dependencies)
 - Unknown codebase? Discovery tasks first
-- Break down any "medium" or "large" tasks
+- Only break down tasks if they can each be independently completed and verified
 """
     else:
         mode_specific = """
