@@ -1203,7 +1203,6 @@ If there ARE deviations, list each one concisely. Be specific about file and lin
     response = run_claude(
         prompt=prompt,
         system_prompt=facilitator.system_prompt + "\n\nYou are checking integration compliance against the architecture contract. Be precise.",
-        timeout=120,
         show_spinner=False
     )
 
@@ -2315,23 +2314,27 @@ def run_sprint(board: Board, max_parallel: int = 8, use_live_dashboard: bool = T
                 # Get wave number of first task to start
                 next_wave = task_wave_map.get(tasks_to_start[0].id, current_wave + 1)
                 if next_wave > current_wave:
-                    # Run wave integration guard before transitioning to next wave
+                    # Run wave integration guard in background — never block task submission
                     if current_wave > 0 and board.architecture_spec:
+                        _guard_wave = current_wave
                         with board_lock:
-                            prev_wave_tasks = [
+                            _guard_tasks = [
                                 t for t in board.tasks
-                                if task_wave_map.get(t.id) == current_wave
+                                if task_wave_map.get(t.id) == _guard_wave
                                 and t.status == TaskStatus.COMPLETED
                             ]
-                        has_impl = any(t.task_type == TaskType.IMPLEMENTATION for t in prev_wave_tasks)
-                        if has_impl:
-                            if not dashboard:
-                                ui.console.print(f"\n[{ui.CYAN}]Running wave {current_wave} integration check...[/]")
-                            issues = run_wave_integration_guard(board, prev_wave_tasks)
-                            if issues and "ALL_CLEAR" not in issues:
-                                with board_lock:
-                                    board.integration_notes += f"\n\n--- Wave {current_wave} ---\n{issues}"
-                                    board.save(find_board_file())
+                        if any(t.task_type == TaskType.IMPLEMENTATION for t in _guard_tasks):
+                            def _run_guard(wave_num, wave_tasks):
+                                issues = run_wave_integration_guard(board, wave_tasks)
+                                if issues and "ALL_CLEAR" not in issues:
+                                    with board_lock:
+                                        board.integration_notes += f"\n\n--- Wave {wave_num} ---\n{issues}"
+                                        board.save(find_board_file())
+                            threading.Thread(
+                                target=_run_guard,
+                                args=(_guard_wave, _guard_tasks),
+                                daemon=True
+                            ).start()
 
                     current_wave = next_wave
                     if dashboard:
