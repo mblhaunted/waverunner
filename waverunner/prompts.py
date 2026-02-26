@@ -866,6 +866,18 @@ You have tools. Use them.
 - TODOs or placeholder values in core logic
 - Less than 50% of acceptance criteria represent real, working functionality
 
+**If the goal involves calling an external AI/LLM API, you MUST verify:**
+- The model name used is a real, current, valid model identifier — look it up or check the code. A hallucinated or outdated model name means every API call fails silently.
+- API call timeouts are at least 45 seconds. LLM responses regularly take 15–30 seconds. A 10–15 second timeout means the feature is broken for real use even if it compiles.
+- The API key is read from environment, not hardcoded.
+- The actual API call path is exercised end-to-end — trace from user action to HTTP request and back. If there is any broken link in that chain (wrong parameter name, missing await, wrong response field), the feature is broken.
+- Do not declare success on an AI-integrated feature without tracing the full call path through the code.
+
+**If the goal involves a desktop app (Electron, Tauri, native), you MUST verify:**
+- The app actually launches without crashing — run it.
+- Any IPC between frontend and backend uses matching parameter names on both sides. A mismatch means every call fails.
+- Any plugin or native module registration matches what the code actually uses.
+
 **Output ONLY valid YAML:**
 
 ```yaml

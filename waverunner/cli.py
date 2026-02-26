@@ -152,6 +152,7 @@ def go(
     planning_mode: str = typer.Option("collaborative", "--planning-mode", help="Planning model: collaborative (default) or independent"),
     dashboard: bool = typer.Option(False, "--dashboard", help="Launch real-time web dashboard"),
     provider: str = typer.Option("claude-code", "--provider", help="LLM provider: claude-code (default) or anthropic-api"),
+    validate_cmd: str = typer.Option("", "--validate-cmd", help="Comma-separated validation steps (Ralph loop). Each step runs independently. E.g. 'cargo build,npm run typecheck,pytest tests/unit'"),
 ):
     """
     Plan and execute a sprint. This is the main command.
@@ -255,6 +256,7 @@ def go(
         mcps=mcp or [],
         task_timeout=timeout,
         use_default_timeouts=task_timeouts,
+        validate_steps=[s.strip() for s in validate_cmd.split(",") if s.strip()] if validate_cmd else [],
     )
 
     # Show goal
@@ -456,6 +458,53 @@ def skip(
     task.status = TaskStatus.SKIPPED
     save_board(board)
     ui.console.print(f"[{ui.DIM}]Skipped: {task_id}[/]")
+
+
+@app.command()
+def retry(
+    feedback: str = typer.Argument("", help="What failed (optional — waverunner re-evaluates and continues)"),
+    max_parallel: int = typer.Option(8, "--max-parallel", "-p", help="Max tasks to run in parallel"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed agent output"),
+    max_iter: Optional[int] = typer.Option(None, "--max-iter", "-i", help="Max iterations"),
+):
+    """
+    The last run failed. Re-evaluate and try again.
+
+    Resets all non-completed tasks to PLANNED and runs the sprint loop again.
+    Optionally provide feedback about what failed.
+
+    Examples:
+        waverunner retry
+        waverunner retry "the app shows a blank screen"
+        waverunner retry "TypeScript build fails with TS2345 errors"
+    """
+    set_verbose(verbose)
+    board = load_board()
+
+    # Inject feedback into board context
+    if feedback:
+        board.context = (board.context or "") + f"\n\n**Retry feedback from user:** {feedback}"
+        ui.console.print(f"[{ui.CYAN}]Feedback recorded: {feedback}[/]")
+
+    # Reset in-progress and failed tasks back to planned so they re-run
+    reset_count = 0
+    for task in board.tasks:
+        if task.status not in (TaskStatus.COMPLETED, TaskStatus.SKIPPED):
+            from .models import TaskStatus as TS
+            task.status = TaskStatus.PLANNED
+            task.started_at = None
+            task.completed_at = None
+            task.notes = (task.notes or "") + "\n[Retried by user]"
+            reset_count += 1
+
+    if reset_count == 0:
+        ui.console.print(f"[{ui.DIM}]All tasks already completed. Starting new evaluation...[/]")
+    else:
+        ui.console.print(f"[{ui.CYAN}]Reset {reset_count} task(s) to retry.[/]")
+
+    save_board(board)
+    ui.print_goal(board.goal, board.mode.value)
+    run_sprint_loop(board, max_iterations=max_iter, max_parallel=max_parallel)
 
 
 @app.command()

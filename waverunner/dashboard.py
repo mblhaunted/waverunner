@@ -54,19 +54,22 @@ class LiveDashboard:
         self.lock = threading.RLock()  # RLock allows same thread to acquire multiple times
         self.live: Optional[Live] = None
 
+    def _get_renderable(self):
+        """Called by Rich on each refresh cycle to pull current state."""
+        with self.lock:
+            return self._render_locked()
+
     def start(self):
         """Start the live dashboard."""
         if not self.show_live:
             return
 
-        with self.lock:
-            initial_render = self._render_locked()
-
         self.live = Live(
-            initial_render,
+            self._get_renderable(),
             refresh_per_second=4,
             screen=False,
-            auto_refresh=True
+            auto_refresh=True,
+            get_renderable=self._get_renderable,
         )
         self.live.start()
 
@@ -151,10 +154,10 @@ class LiveDashboard:
             self._refresh()
 
     def _refresh(self):
-        """Refresh the live display."""
-        if self.live:
-            # Don't acquire lock here - caller already has it
-            self.live.update(self._render_locked())
+        """Mark state as dirty — auto_refresh picks it up at 4Hz.
+        Do NOT call live.update() from worker threads; parallel calls
+        cause partial renders to commit and produce duplicate output lines."""
+        pass  # auto_refresh=True handles redraw on its own schedule
 
     def _render_locked(self):
         """Render the current dashboard state. Must be called with lock held."""

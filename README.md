@@ -60,6 +60,7 @@ waverunner go "goal" --provider anthropic-api  # use Anthropic API directly
 waverunner go "goal" --max-iter 3        # limit retry iterations
 waverunner go "goal" --task-timeouts     # enable complexity-based timeouts
 waverunner go "goal" --context "..."     # add context for the planning team
+waverunner go "goal" --validate-cmd "cargo build"  # Ralph loop: validate after each task, retry on failure
 ```
 
 Board management:

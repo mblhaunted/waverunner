@@ -58,6 +58,73 @@ COMPLEXITY_TIMEOUTS = {
 }
 
 
+def _run_validate_steps(steps: list[str], cwd: Optional[str] = None) -> tuple[bool, str]:
+    """
+    Run each validation step in order. Stop at the first failure.
+    Returns (all_passed, combined_failure_output).
+    """
+    import subprocess as _sp
+
+    for step in steps:
+        result = _sp.run(step, shell=True, capture_output=True, text=True, cwd=cwd)
+        if result.returncode != 0:
+            output = (result.stdout + result.stderr).strip()[:2000]
+            return False, f"Step `{step}` failed (exit {result.returncode}):\n{output}"
+    return True, ""
+
+
+def run_ralph_validation(
+    board: "Board",
+    task: "Task",
+    execute_task_fn,
+    max_retries: int = 2,
+    cwd: Optional[str] = None,
+) -> bool:
+    """
+    Ralph loop: run all validate_steps after an implementation task completes.
+
+    Each step is an independent command. ALL must pass. The first failure
+    stops the chain and injects the output into task.notes for the retry.
+
+    Skipped (returns True) when:
+    - board.validate_steps is empty
+    - task.task_type is not IMPLEMENTATION
+    """
+    steps = board.validate_steps
+    if not steps:
+        return True
+    if task.task_type != TaskType.IMPLEMENTATION:
+        return True
+
+    for attempt in range(max_retries + 1):
+        passed, failure_output = _run_validate_steps(steps, cwd=cwd)
+
+        if passed:
+            return True
+
+        if attempt == max_retries:
+            task.notes = (task.notes or "") + (
+                f"\n\n[Ralph: validation failed after {max_retries + 1} attempts]\n{failure_output}"
+            )
+            return False
+
+        ui.console.print(
+            f"[yellow]  ⚡ Ralph: validation failed (attempt {attempt + 1}/{max_retries + 1}) — retrying[/yellow]"
+        )
+        task.notes = (task.notes or "") + (
+            f"\n\n[Ralph validation failed — attempt {attempt + 1}]\n"
+            f"{failure_output}\n\nFix these errors before proceeding."
+        )
+
+        if execute_task_fn is not None:
+            artifacts, actual, notes = execute_task_fn(board, task)
+            task.artifacts = artifacts
+            if notes:
+                task.notes = notes
+
+    return False
+
+
 def calculate_waves(tasks: list[Task], already_completed: set[str] = None) -> list[list[Task]]:
     """
     Calculate execution waves based on dependency graph.
@@ -191,22 +258,28 @@ def reaper_monitor_task(task: Task, persona: Persona, silence_seconds: int, elap
         return "KILL", f"Infinite loop detected: '{most_common_line[:50]}...' repeating excessively"
 
     # 2. Process status check - detect API waits, high CPU, zombie states
-    # Check this BEFORE heartbeat/silence kills
-    # Wait 15min before checking - Claude API can legitimately take that long
-    if process_pid and silence_seconds > 900:
+    # Check early (after 3min) using network connections as the key signal:
+    # - Has open connections = still waiting for API = legitimate, keep waiting up to 15min
+    # - No connections + silence = already got response but stuck = kill after 5min
+    if process_pid and silence_seconds > 180:
         cpu, state, open_connections = get_process_status(process_pid)
 
         # 2a. Process has open network connections = waiting for API/network I/O (NORMAL)
-        if open_connections > 0:
+        # Give these up to 15 min - API calls can legitimately take that long
+        if open_connections > 0 and silence_seconds < 900:
             return "CONTINUE", ""  # Waiting for network I/O (API call), not hung
 
-        # 2b. High CPU with long silence = legitimate computation
+        # 2b. High CPU with silence = legitimate computation
         if cpu > 50.0:
             return "CONTINUE", ""  # Computing without output is OK
 
         # 2c. Zombie or disk-sleep = definitely hung
         if state in ("zombie", "disk-sleep"):
             return "KILL", f"Process in bad state: {state} (unrecoverable)"
+
+        # 2d. No network connections + 5min+ silence = got response but stuck mid-output
+        if open_connections == 0 and silence_seconds > 300:
+            return "KILL", f"No network activity and {silence_seconds}s silence — agent hung after receiving response"
 
     # 3. Heartbeat check - agent must print heartbeat every 60s
     # If we see a heartbeat in recent output but silence is >15min,
@@ -239,9 +312,8 @@ def reaper_monitor_task(task: Task, persona: Persona, silence_seconds: int, elap
 
     # Only use LLM if there's ambiguous evidence that needs judgment
     # (long silence + no clear CPU activity = might be hung)
-    # Wait 15min - Claude API can legitimately take that long
-    if silence_seconds < 900:
-        # Less than 15min silence = working fine, no need for LLM
+    if silence_seconds < 300:
+        # Less than 5min silence = working fine, no need for LLM
         return "CONTINUE", ""
 
     # Get process status ONCE for both decision and LLM context (avoid race condition)
@@ -1071,7 +1143,94 @@ def generate_plan_collaborative(board: Board, iteration: int = 1, max_iterations
         ui.console.print(f"\n[{ui.CYAN}]Generating architecture contract...[/]")
         board.architecture_spec = generate_architecture_contract(board)
 
+    # Auto-determine validation steps if not already set by user
+    if not board.validate_steps and impl_count >= 1:
+        ui.console.print(f"\n[{ui.CYAN}]Determining validation steps...[/]")
+        board.validate_steps = determine_validate_steps(board)
+        if board.validate_steps:
+            ui.console.print(f"[{ui.DIM}]Validation: {len(board.validate_steps)} steps[/]")
+            for s in board.validate_steps:
+                ui.console.print(f"[{ui.DIM}]  • {s}[/]")
+
     return board
+
+
+def determine_validate_steps(board: Board) -> list[str]:
+    """
+    Ask the planning team to produce an ordered list of validation steps for the Ralph loop.
+
+    Each step is an independent shell command that proves a specific thing works.
+    The list covers: compilation, type checking, unit tests, integration checks —
+    whatever is appropriate for what's being built.
+
+    Returns a list of command strings. Returns [] if determination fails.
+    """
+    facilitator = get_personas(board.mode, accountability=board.persona_accountability)[0]
+
+    task_lines = []
+    for t in board.tasks:
+        task_lines.append(f"- [{t.task_type.value.upper()}] {t.title}")
+        if t.description:
+            task_lines.append(f"  {t.description[:150]}")
+
+    arch_hint = f"\n\n**Architecture contract excerpt:**\n{board.architecture_spec[:1000]}" if board.architecture_spec else ""
+
+    prompt = f"""## Validation Steps Determination
+
+**Goal:** {board.goal}
+
+**Tasks:**
+{chr(10).join(task_lines)}{arch_hint}
+
+Produce an ordered list of validation steps that together PROVE the implementation works.
+Each step is an independent shell command run from the project root.
+
+Rules:
+- Each step must be independently runnable and independently failable
+- Cover every layer: compilation, type checking, unit tests, integration where feasible
+- Each step must complete in under 60 seconds
+- Steps run in order — a failing step stops the chain and the agent fixes before continuing
+- More steps is better than fewer. Don't collapse everything into one command.
+
+Output a YAML list of strings and nothing else. Example format:
+```yaml
+- cargo build
+- npm run typecheck
+- cargo test --lib
+- npm test -- --run
+```
+
+Output ONLY the yaml block."""
+
+    try:
+        response = run_claude(
+            prompt=prompt,
+            system_prompt=facilitator.system_prompt + "\n\nOutput ONLY a YAML list of shell command strings. No explanation.",
+            show_spinner=True,
+            timeout=60,
+        )
+    except Exception:
+        return []
+
+    # Extract YAML list from response
+    import re as _re
+    # Find yaml block or bare list
+    match = _re.search(r"```(?:yaml)?\s*([\s\S]+?)```", response)
+    yaml_text = match.group(1).strip() if match else response.strip()
+    try:
+        import yaml as _yaml
+        steps = _yaml.safe_load(yaml_text)
+        if isinstance(steps, list):
+            return [str(s).strip() for s in steps if str(s).strip()]
+    except Exception:
+        pass
+    return []
+
+
+# Keep old name as alias for backward compat with tests
+def determine_validate_cmd(board: Board) -> str:
+    steps = determine_validate_steps(board)
+    return steps[0] if steps else ""
 
 
 def generate_architecture_contract(board: Board) -> str:
@@ -1585,6 +1744,15 @@ def generate_plan_independent(board: Board, iteration: int = 1, max_iterations: 
     if impl_count >= 2:
         ui.console.print(f"\n[{ui.CYAN}]Generating architecture contract...[/]")
         board.architecture_spec = generate_architecture_contract(board)
+
+    # Auto-determine validation steps if not already set by user
+    if not board.validate_steps and impl_count >= 1:
+        ui.console.print(f"\n[{ui.CYAN}]Determining validation steps...[/]")
+        board.validate_steps = determine_validate_steps(board)
+        if board.validate_steps:
+            ui.console.print(f"[{ui.DIM}]Validation: {len(board.validate_steps)} steps[/]")
+            for s in board.validate_steps:
+                ui.console.print(f"[{ui.DIM}]  • {s}[/]")
 
     # Reaper removed from planning - no validation step needed
 
@@ -2126,6 +2294,11 @@ def run_sprint(board: Board, max_parallel: int = 8, use_live_dashboard: bool = T
 
             artifacts, actual, notes = execute_task(board, task, progress_callback=progress_cb if dashboard else None)
 
+            # Ralph loop: validate after implementation tasks
+            if board.validate_steps and task.task_type == TaskType.IMPLEMENTATION:
+                board_dir = str(Path(find_board_file()).parent) if find_board_file() else None
+                run_ralph_validation(board, task, execute_task_fn=execute_task, cwd=board_dir)
+
             with board_lock:
                 task.complete(artifacts=artifacts, actual_complexity=actual)
                 if notes:
@@ -2427,25 +2600,105 @@ def evaluate_sprint(board: Board) -> tuple[bool, str, str, str]:
     """
     Have Claude evaluate if the sprint was successful.
     Returns (success, reasoning, follow_up_goal, follow_up_context).
+
+    Step 1: Run validate_cmd. If it fails, skip LLM — hard fail.
+    Step 2: Pass validation result into LLM evaluation prompt.
     """
-    prompt = get_evaluation_prompt(board)
+    import subprocess as _sp
+    from pathlib import Path as _Path
 
-    system = """You are a critical code reviewer evaluating sprint results.
-Be skeptical. Don't assume success just because tasks were marked complete.
-Check if the goal was actually achieved.
+    # ── Step 1: Hard gate — run ALL validation steps before asking LLM anything ─
+    steps = board.validate_steps
+    all_passed = None
+    validation_summary = ""
+    if steps:
+        board_file = find_board_file()
+        cwd = str(_Path(board_file).parent) if board_file else None
+        ui.console.print(f"[{ui.CYAN}]Running {len(steps)} validation step(s) before evaluation...[/]")
+        passed, failure_output = _run_validate_steps(steps, cwd=cwd)
+        all_passed = passed
+        validation_summary = failure_output
 
-IMPORTANT: Focus on whether the OUTCOME was achieved, not HOW it was achieved.
-- If the goal was to "ask the user X", check if the information was communicated (document, output, etc.)
-- Don't demand specific tools/methods if the goal was accomplished another way
-- If you're requesting the same follow-up goal 3+ times, the approach is wrong - try something different
+        if not passed:
+            ui.console.print(f"[{ui.ERROR}]Validation failed — cannot claim success.[/]")
+            ui.console.print(f"[{ui.DIM}]{failure_output[:500]}[/]")
+            follow_up = (
+                f"Validation failed. Fix all errors before claiming success.\n\n{failure_output[:2000]}"
+            )
+            return False, f"Build is broken: {failure_output[:200]}", follow_up, failure_output
 
-Output ONLY valid YAML, no explanations outside the yaml block."""
+    # ── Step 2: Verification pass — free-form, tools enabled, no YAML constraint ─
+    # The evaluator runs commands, reads files, checks output.
+    # "Output ONLY valid YAML" is what caused it to skip verification and guess.
+    # This call has no output format constraint — it just does the work.
+    if all_passed is True:
+        steps_list = "\n".join(f"  ✓ {s}" for s in steps)
+        validation_preamble = f"\n\n**Validation steps passed:**\n{steps_list}\n\nNow verify the goal is actually met."
+    else:
+        validation_preamble = (
+            "\n\n**No automated validation was run.** "
+            "You must verify manually using your tools."
+        )
+
+    verification_prompt = get_evaluation_prompt(board) + validation_preamble + """
+
+## Verification Instructions
+
+Use your tools to actively verify the goal was achieved. Do not read task notes and assume they are true.
+
+1. Read the actual files that were produced
+2. Run the build — confirm it exits 0
+3. Run any tests that exist — report exact pass/fail counts
+4. For software: attempt to launch it or exercise its core logic
+5. For each acceptance criterion: state VERIFIED or FAILED and what you did to check it
+
+Write a plain-text verification report. Be specific about what you ran and what you got back.
+Do not output YAML yet — just do the verification and report findings."""
+
+    verification_system = """You are a skeptical QA engineer verifying whether software actually works.
+You do not trust task notes or artifact lists. You verify by running things.
+Use every tool available to you. Report what you actually found — not what you expect."""
 
     ui.print_evaluating()
     if VERBOSE:
         ui.console.print(f"[{ui.DIM}]{'─' * 50}[/]")
-    # Evaluator needs tools to actually verify the deliverable — pass MCPs and give it time
-    response = run_claude(prompt, system, mcps=board.mcps if board.mcps else None, timeout=600)
+    verification_report = run_claude(
+        verification_prompt,
+        verification_system,
+        mcps=board.mcps if board.mcps else None,
+        timeout=600,
+    )
+    if VERBOSE:
+        ui.console.print(f"[{ui.DIM}]{'─' * 50}[/]")
+
+    # ── Step 3: Verdict — structured output based on what verification found ──
+    verdict_prompt = f"""## Verification Report
+
+{verification_report}
+
+## Original Goal
+
+{board.goal}
+
+## Render Verdict
+
+Based ONLY on what the verification report found above — not on the original task notes —
+output a YAML verdict. If the verification report says something failed, that is a failure.
+If the report is ambiguous or couldn't verify something, that is a failure.
+
+```yaml
+success: true|false
+confidence: high|medium|low
+reasoning: "one sentence"
+issues:
+  - "specific issue 1"
+follow_up_goal: "what to fix next (if success=false)"
+follow_up_context: "specific findings from verification to help the next sprint"
+```"""
+
+    verdict_system = "Output ONLY valid YAML. No explanation outside the yaml block."
+
+    response = run_claude(verdict_prompt, verdict_system, timeout=120)
     if VERBOSE:
         ui.console.print(f"[{ui.DIM}]{'─' * 50}[/]")
 
@@ -2453,7 +2706,8 @@ Output ONLY valid YAML, no explanations outside the yaml block."""
         data = extract_yaml_from_response(response)
     except (ValueError, yaml.YAMLError) as e:
         ui.console.print(f"[{ui.WARN}]Could not parse evaluation: {e}[/]")
-        return True, "Could not parse evaluation", "", ""
+        # Default to fail — if we can't parse the verdict, something went wrong
+        return False, "Evaluation failed to parse", "Fix the sprint and try again", ""
 
     success = data.get("success", True)
     reasoning = data.get("reasoning", "")
