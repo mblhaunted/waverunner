@@ -2442,8 +2442,8 @@ Output ONLY valid YAML, no explanations outside the yaml block."""
     ui.print_evaluating()
     if VERBOSE:
         ui.console.print(f"[{ui.DIM}]{'─' * 50}[/]")
-    # Evaluation doesn't need MCPs - it's analyzing results
-    response = run_claude(prompt, system)
+    # Evaluator needs tools to actually verify the deliverable — pass MCPs and give it time
+    response = run_claude(prompt, system, mcps=board.mcps if board.mcps else None, timeout=600)
     if VERBOSE:
         ui.console.print(f"[{ui.DIM}]{'─' * 50}[/]")
 

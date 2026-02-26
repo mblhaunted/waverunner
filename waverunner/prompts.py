@@ -826,44 +826,45 @@ def get_evaluation_prompt(board: Board) -> str:
 ## Task Details
 {task_results}
 
-## Your Evaluation
+## Your Job: Prove It
 
-Analyze whether this sprint achieved its goal.
+Your job is not to read task notes and reason about whether the goal might have been achieved.
+Your job is to **prove** it was achieved — or prove it wasn't.
 
-**For SPIKE tasks (investigation/analysis):**
-- SUCCESS = findings are in the notes field answering the questions asked
-- Artifacts don't matter (spikes investigate, they don't build)
-- If notes contain clear findings/answers, it succeeded
+Task notes and artifact lists are claims made by the agents. Claims are not proof.
+You have tools. Use them.
 
-**For IMPLEMENTATION tasks (building/coding):**
-- SUCCESS = artifacts were produced and acceptance criteria met
-- Check that files were actually created/modified
-- Verify the implementation works
+**What proof looks like depends on the goal:**
 
-**Consider:**
-1. Were all acceptance criteria actually met?
-2. For spikes: Do notes contain clear findings? For implementations: Do artifacts match what was needed?
-3. Is there any obvious unfinished work or gaps?
-4. Did the work actually solve the original problem?
-5. **File management:** Were files created in the right place? Did tasks extend existing work or create duplicates?
+- Software that should run: build it, run it, confirm it works. If it errors, FAIL.
+- Tests that should pass: run the test suite. If tests fail or don't exist, FAIL.
+- A file that should contain X: read the file and verify X is actually there.
+- Research findings: verify the key claims are accurate and complete.
+- A working API: call it and check the response.
+- A UI: check that the component actually renders and responds.
 
-Be critical but UNDERSTAND THE DIFFERENCE between spikes and implementations.
+**How to verify:**
+1. Read the goal carefully — what does "done" actually mean for this specific goal?
+2. Look at what was produced (files, artifacts, output)
+3. Actively verify it — run commands, read files, check output, execute tests
+4. Report exactly what you did to verify and what you found
 
-**Red flags for follow-up sprint:**
-- Duplicate implementations (created new structure when existing one was available)
-- Files in wrong locations (outside project directory, random pollution)
-- Work that ignored previous iteration's output
+**Do not declare success because:**
+- Tasks were marked complete
+- Notes say it worked
+- Files exist with the right names
+- The code looks reasonable
 
-**FAIL if the implementation took a lazy shortcut:**
-- Implementation task built a thin wrapper around an external service API when
-  the goal was to build the thing itself
-- Core logic is stubbed, mocked, or delegated rather than implemented
-- Functions return placeholder values (TODO, pass, empty strings)
-- The deliverable is a demo/prototype when a production implementation was requested
-- Less than 50% of the acceptance criteria represent the actual core functionality
+**Declare success only if you have verified it yourself.**
 
-If any of these are true, success = false regardless of whether tasks were "completed."
-The goal was not achieved if the core work was avoided.
+**FAIL if:**
+- The deliverable doesn't actually work when you try it
+- Build errors exist
+- Tests fail
+- Core functionality is missing, stubbed, or delegated to an external service
+- The goal was to build X and they built a wrapper around someone else's X
+- TODOs or placeholder values in core logic
+- Less than 50% of acceptance criteria represent real, working functionality
 
 **Output ONLY valid YAML:**
 
