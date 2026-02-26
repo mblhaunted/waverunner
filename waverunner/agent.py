@@ -1205,7 +1205,7 @@ If there ARE deviations, list each one concisely. Be specific about file and lin
         prompt=prompt,
         system_prompt=facilitator.system_prompt + "\n\nYou are checking integration compliance against the architecture contract. Be precise.",
         timeout=120,
-        show_spinner=True
+        show_spinner=False
     )
 
     return response.strip()
@@ -2663,7 +2663,7 @@ If everything is already clean, just say so and exit quickly.
         result = run_claude(
             prompt=cleanup_prompt,
             system_prompt=system_prompt,
-            show_spinner=True,
+            show_spinner=False,
             timeout=180  # 3 minutes max for cleanup
         )
 
