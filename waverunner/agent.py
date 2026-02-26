@@ -1127,7 +1127,6 @@ Output ONLY the markdown document, no YAML, no preamble."""
     response = run_claude(
         prompt=prompt,
         system_prompt=facilitator.system_prompt + "\n\nYou are generating a binding technical contract for parallel agents. Be precise and specific. Output ONLY markdown — do NOT use any tools, do NOT browse the web, do NOT read files. This is a pure reasoning task.",
-        timeout=180,
         show_spinner=True
     )
 
