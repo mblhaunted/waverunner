@@ -709,6 +709,21 @@ def extract_yaml_from_response(response: str) -> dict:
         # YAML treats *word as an alias reference, which fails. Strip asterisks and retry.
         import re
         cleaned = re.sub(r'\*+', '', yaml_content)
+
+        # LLMs also generate double-quoted values that contain unescaped interior double quotes,
+        # e.g.: description: "watch stdout for "Running Tauri app" or similar)"
+        # YAML parses the first inner " as the closing quote, leaving the remainder as garbage.
+        # Fix: convert such lines to single-quoted values (escaping any ' as '').
+        fixed_lines = []
+        for line in cleaned.split('\n'):
+            m = re.match(r'^(\s*[\w_-]+:\s+)"(.*)"(\s*)$', line)
+            if m and '"' in m.group(2):
+                key_part, value, trailing = m.group(1), m.group(2), m.group(3)
+                safe_value = value.replace("'", "''")
+                line = f"{key_part}'{safe_value}'{trailing}"
+            fixed_lines.append(line)
+        cleaned = '\n'.join(fixed_lines)
+
         try:
             result = yaml.safe_load(cleaned)
         except yaml.YAMLError as e:
